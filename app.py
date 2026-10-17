@@ -12,54 +12,13 @@ from pypdf import PdfReader, PdfWriter
 
 APP_TITLE = "PDF Page 2 Replacer"
 
-# You can override this with an environment variable when deploying.
-# Example:
-#   MIDDLE_PDF_DIR=/data/pdf_page2_replacer
-DATA_DIR = Path(
-    os.environ.get(
-        "MIDDLE_PDF_DIR",
-        str(Path.home() / ".pdf_page2_replacer_web")
-    )
-).expanduser()
-
-MIDDLE_PDF_PATH = DATA_DIR / "permanent_middle.pdf"
-
-
-def ensure_data_dir() -> None:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
+# Put the fixed replacement PDF in the same GitHub repository as app.py.
+# Its filename must be: permanent_middle.pdf
+MIDDLE_PDF_PATH = Path(__file__).resolve().parent / "permanent_middle.pdf"
 
 
 def middle_pdf_exists() -> bool:
     return MIDDLE_PDF_PATH.exists() and MIDDLE_PDF_PATH.is_file()
-
-
-def save_middle_pdf(uploaded_file) -> None:
-    ensure_data_dir()
-
-    data = uploaded_file.getvalue()
-    if not data:
-        raise ValueError("The selected middle PDF is empty.")
-
-    # Validate before saving permanently.
-    reader = PdfReader(io.BytesIO(data))
-    if reader.is_encrypted:
-        try:
-            result = reader.decrypt("")
-        except Exception as exc:
-            raise ValueError(
-                "The middle PDF is password-protected and cannot be used."
-            ) from exc
-        if not result:
-            raise ValueError(
-                "The middle PDF is password-protected and cannot be used."
-            )
-
-    if len(reader.pages) < 1:
-        raise ValueError("The middle PDF does not contain any pages.")
-
-    tmp_path = MIDDLE_PDF_PATH.with_suffix(".tmp")
-    tmp_path.write_bytes(data)
-    tmp_path.replace(MIDDLE_PDF_PATH)
 
 
 def read_pdf_from_bytes(data: bytes, label: str) -> PdfReader:
@@ -172,15 +131,14 @@ st.set_page_config(
     layout="centered",
 )
 
-ensure_data_dir()
 
 st.title("📄 PDF Page 2 Replacer")
 st.caption(
-    "Final PDF = Original page 1 + Permanent middle PDF + Original pages 3 to last"
+    "Upload the original PDF only. The fixed replacement PDF is included with the app."
 )
 
 st.info(
-    "Page 2 of the original PDF is removed. The entire permanent middle PDF is inserted after page 1."
+    "The original PDF's page 2 is removed. The bundled permanent_middle.pdf is inserted after original page 1."
 )
 
 # -------------------------
@@ -202,8 +160,8 @@ if middle_pdf_exists():
             f"The saved permanent middle PDF could not be read: {exc}"
         )
 else:
-    st.warning(
-        "No permanent middle PDF has been set yet. Open Settings below and upload it once."
+    st.error(
+        "The fixed replacement PDF is missing. Add `permanent_middle.pdf` to the same GitHub repository folder as `app.py`, then redeploy."
     )
 
 # -------------------------
@@ -250,7 +208,7 @@ if original_file is not None:
                 st.error(f"Could not create the final PDF: {exc}")
     else:
         st.error(
-            "Set the permanent middle PDF in Settings before processing the original PDF."
+            "The fixed replacement PDF is missing. Add `permanent_middle.pdf` to the same GitHub repository folder as `app.py`, then redeploy."
         )
 
 
@@ -278,90 +236,3 @@ if "final_pdf_bytes" in st.session_state:
     )
 
 
-# -------------------------
-# Settings
-# -------------------------
-st.divider()
-
-with st.expander("⚙️ Settings", expanded=not middle_pdf_exists()):
-    st.write("### Permanent middle PDF")
-
-    st.code(str(MIDDLE_PDF_PATH), language=None)
-
-    if middle_pdf_exists():
-        try:
-            middle_bytes_for_download = MIDDLE_PDF_PATH.read_bytes()
-            middle_reader = read_pdf_from_bytes(
-                middle_bytes_for_download,
-                "The permanent middle PDF",
-            )
-            st.write(
-                f"Current saved middle PDF has **{len(middle_reader.pages)} page(s)**."
-            )
-
-            st.download_button(
-                label="⬇️ Download Current Middle PDF",
-                data=middle_bytes_for_download,
-                file_name="permanent_middle.pdf",
-                mime="application/pdf",
-                use_container_width=True,
-            )
-        except Exception as exc:
-            st.error(f"Unable to read the saved middle PDF: {exc}")
-
-    replacement_file = st.file_uploader(
-        "Upload or drag a PDF here to set or replace the permanent middle PDF",
-        type=["pdf"],
-        accept_multiple_files=False,
-        key="middle_pdf_replacement_uploader",
-    )
-
-    if replacement_file is not None:
-        if st.button(
-            "Save as Permanent Middle PDF",
-            use_container_width=True,
-        ):
-            try:
-                save_middle_pdf(replacement_file)
-
-                # Clear previously created output because its middle PDF may now differ.
-                for key in (
-                    "final_pdf_bytes",
-                    "final_pdf_name",
-                    "final_pdf_details",
-                ):
-                    st.session_state.pop(key, None)
-
-                st.success(
-                    "Permanent middle PDF saved successfully. It will be used automatically for future jobs."
-                )
-                st.rerun()
-            except Exception as exc:
-                st.error(f"Could not save the permanent middle PDF: {exc}")
-
-    st.write("### Folder access")
-
-    st.caption(
-        "A browser cannot directly open a folder on a remote web server. "
-        "If this Streamlit app is running locally on your own computer, "
-        "the button below can try to open the server storage folder. "
-        "For online hosting, use the displayed path and the download button instead."
-    )
-
-    if st.button(
-        "📂 Try to Open Server Folder",
-        use_container_width=True,
-    ):
-        ok, message = try_open_server_folder()
-        if ok:
-            st.success(message)
-        else:
-            st.warning(
-                "The folder could not be opened automatically on this server. "
-                f"Storage path: {DATA_DIR}\n\nDetails: {message}"
-            )
-
-    st.caption(
-        "For permanent cloud storage, set the `MIDDLE_PDF_DIR` environment variable "
-        "to a persistent disk or volume mounted by your hosting provider."
-    )
